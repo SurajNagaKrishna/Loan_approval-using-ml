@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loan Result — {{ "Approved" if approved else "Rejected" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <div class="header">
+    <div class="badge">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+      ML-Powered · Voting Classifier
+    </div>
+    <h1>Decision<br>Summary</h1>
+  </div>
+
+  <div class="result-wrap">
+    <div class="result-card {{ 'approved' if approved else 'rejected' }}">
+
+      <!-- Status -->
+      <span class="result-icon">{{ "✅" if approved else "❌" }}</span>
+      <div class="result-status">Loan {{ "Approved" if approved else "Rejected" }}</div>
+      <div class="result-divider"></div>
+
+      <p class="result-message">
+        {% if approved %}
+          Congratulations! Based on the information provided, your loan application meets our eligibility criteria.
+        {% else %}
+          Unfortunately, your application does not meet the required criteria at this time. Consider improving your credit history or adjusting the loan amount.
+        {% endif %}
+      </p>
+
+      <!-- ── Confidence Block ── -->
+      {% if has_proba %}
+      <div class="conf-block">
+
+        <!-- Big confidence number -->
+        <div class="conf-header">
+          <div class="conf-title">Model Confidence</div>
+          <div class="conf-pct {{ 'conf-approved' if approved else 'conf-rejected' }}"
+               data-target="{{ confidence }}">0%</div>
+        </div>
+
+        <!-- Animated bar -->
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill {{ 'fill-approved' if approved else 'fill-rejected' }}"
+               data-width="{{ confidence }}"></div>
+        </div>
+
+        <!-- Approved vs Rejected split -->
+        <div class="conf-split">
+          <div class="conf-split-item">
+            <span class="split-dot dot-approved"></span>
+            <span class="split-label">Approved</span>
+            <span class="split-val">{{ approved_conf }}%</span>
+          </div>
+          <div class="conf-split-divider"></div>
+          <div class="conf-split-item">
+            <span class="split-dot dot-rejected"></span>
+            <span class="split-label">Rejected</span>
+            <span class="split-val">{{ rejected_conf }}%</span>
+          </div>
+        </div>
+
+        <!-- Confidence interpretation badge -->
+        <div class="conf-badge
+          {% if confidence >= 80 %} conf-badge--high
+          {% elif confidence >= 60 %} conf-badge--medium
+          {% else %} conf-badge--low {% endif %}">
+          {% if confidence >= 80 %}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            High confidence prediction
+          {% elif confidence >= 60 %}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Moderate confidence — borderline case
+          {% else %}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Low confidence — result uncertain
+          {% endif %}
+        </div>
+
+      </div>
+      {% endif %}
+      <!-- ── End Confidence Block ── -->
+
+      <!-- Summary chips -->
+      <div class="result-chips">
+        <div class="chip">Income <strong>${{ "{:,}".format(applicant_income | int) }}/mo</strong></div>
+        <div class="chip">Loan <strong>${{ loan_amount }}K</strong></div>
+        <div class="chip">Term <strong>{{ loan_term }} mo</strong></div>
+        <div class="chip">Credit <strong>{{ "Good" if credit_history == "1" else "Poor" }}</strong></div>
+        <div class="chip">Area <strong>{{ property_area }}</strong></div>
+      </div>
+
+      <a href="/" class="btn-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Try Another Application
+      </a>
+
+    </div>
+    <p class="result-note">Confidence scores are probabilities from the Voting Classifier ensemble (Logistic Regression + Random Forest + Gradient Boosting). For demonstration purposes only.</p>
+  </div>
+
+  <script>
+    /* Animate confidence percentage counter */
+    function animateCount(el, target, duration) {
+      const start = performance.now();
+      function step(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        el.textContent = (ease * target).toFixed(1) + '%';
+        if (progress < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    /* Animate bar fill */
+    function animateBar(el, targetWidth, duration) {
+      el.style.width = '0%';
+      el.style.transition = `width ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.style.width = targetWidth + '%';
+        });
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const pctEl  = document.querySelector('.conf-pct');
+      const barEl  = document.querySelector('.conf-bar-fill');
+      if (!pctEl || !barEl) return;
+
+      const target = parseFloat(pctEl.dataset.target);
+      const width  = parseFloat(barEl.dataset.width);
+
+      // Small delay so animation is visible after page paint
+      setTimeout(() => {
+        animateCount(pctEl, target, 1200);
+        animateBar(barEl, width, 1000);
+      }, 300);
+    });
+  </script>
+
+</body>
+</html>
